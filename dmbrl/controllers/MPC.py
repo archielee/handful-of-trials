@@ -157,7 +157,7 @@ class MPC(Controller):
         else:
             print("Trajectory prediction logging is disabled.")
 
-    def train(self, obs_trajs, acs_trajs, rews_trajs):
+    def train(self, obs_trajs, acs_trajs, rews_trajs, global_step=0):
         """Trains the internal model of this controller. Once trained,
         this controller switches from applying random actions to using MPC.
 
@@ -177,7 +177,7 @@ class MPC(Controller):
         self.train_targs = np.concatenate([self.train_targs] + new_train_targs, axis=0)
 
         # Train the model
-        self.model.train(self.train_in, self.train_targs, **self.model_train_cfg)
+        self.model.train(self.train_in, self.train_targs, global_step=global_step, **self.model_train_cfg)
         self.has_been_trained = True
 
     def reset(self):

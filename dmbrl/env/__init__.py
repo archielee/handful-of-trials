@@ -23,3 +23,8 @@ register(
     id='MBRLHalfCheetah-v0',
     entry_point='dmbrl.env.half_cheetah:HalfCheetahEnv'
 )
+
+register(
+    id='MBRLQuadrotor2D-v0',
+    entry_point='dmbrl.env.quadrotor2d:Quadrotor2DEnv'
+)

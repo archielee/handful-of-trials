@@ -54,6 +54,8 @@ class Agent:
 
         policy.reset()
         for t in range(horizon):
+            self.env.render()
+
             if video_record:
                 recorder.capture_frame()
             start = time.time()

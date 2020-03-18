@@ -65,7 +65,7 @@ class MBExperiment:
 
         self.logdir = os.path.join(
             get_required_argument(params.log_cfg, "logdir", "Must provide log parent directory."),
-            strftime("%Y-%m-%d--%H:%M:%S", localtime())
+            'quad_2d_debug'#strftime("%Y-%m-%d--%H:%M:%S", localtime())
         )
         self.nrecord = params.log_cfg.get("nrecord", 0)
         self.neval = params.log_cfg.get("neval", 1)
@@ -130,7 +130,7 @@ class MBExperiment:
 
             self.policy.dump_logs(self.logdir, iter_dir)
             savemat(
-                os.path.join(self.logdir, "logs.mat"),
+                os.path.join(iter_dir, "logs.mat"),
                 {
                     "observations": traj_obs,
                     "actions": traj_acs,
@@ -146,5 +146,6 @@ class MBExperiment:
                 self.policy.train(
                     [sample["obs"] for sample in samples],
                     [sample["ac"] for sample in samples],
-                    [sample["rewards"] for sample in samples]
+                    [sample["rewards"] for sample in samples], global_step=i+1
                 )
+        self.policy.model.train_writer.close()

@@ -71,6 +71,10 @@ class BNN:
             self.num_nets = params.get('num_networks', 1)
             self.model_loaded = False
 
+        summary_dir = os.path.join(self.model_dir, 'summary')
+        self.train_writer = tf.summary.FileWriter(summary_dir,
+                                                  self.sess.graph)
+
         if self.num_nets == 1:
             print("Created a neural network with variance predictions.")
         else:
@@ -183,6 +187,11 @@ class BNN:
             self.mse_loss = self._compile_losses(self.sy_train_in, self.sy_train_targ, inc_var_loss=False)
 
             self.train_op = self.optimizer.minimize(train_loss, var_list=self.optvars)
+            tf.summary.scalar("mse_loss_1", self.mse_loss[0])
+            tf.summary.scalar("mse_loss_2", self.mse_loss[1])
+            tf.summary.scalar("mse_loss_3", self.mse_loss[2])
+            tf.summary.scalar("mse_loss_4", self.mse_loss[3])
+            tf.summary.scalar("mse_loss_5", self.mse_loss[4])
 
         # Initialize all variables
         self.sess.run(tf.variables_initializer(self.optvars + self.nonoptvars + self.optimizer.variables()))
@@ -219,7 +228,7 @@ class BNN:
 
     def train(self, inputs, targets,
               batch_size=32, epochs=100,
-              hide_progress=False, holdout_ratio=0.0, max_logging=5000):
+              hide_progress=False, holdout_ratio=0.0, max_logging=5000, global_step=0):
         """Trains/Continues network training
 
         Arguments:
@@ -252,7 +261,7 @@ class BNN:
             epoch_range = range(epochs)
         else:
             epoch_range = trange(epochs, unit="epoch(s)", desc="Network training")
-        for _ in epoch_range:
+        for step in epoch_range:
             for batch_num in range(int(np.ceil(idxs.shape[-1] / batch_size))):
                 batch_idxs = idxs[:, batch_num * batch_size:(batch_num + 1) * batch_size]
                 self.sess.run(
@@ -262,15 +271,15 @@ class BNN:
             idxs = shuffle_rows(idxs)
             if not hide_progress:
                 if holdout_ratio < 1e-12:
+                    loss, summary_out = self.sess.run([self.mse_loss, tf.summary.merge(tf.get_collection(tf.GraphKeys.SUMMARIES), name='summary_op')],
+                                                      feed_dict={self.sy_train_in: inputs[idxs[:, :max_logging]],
+                                                                 self.sy_train_targ: targets[idxs[:, :max_logging]]})
                     epoch_range.set_postfix({
-                        "Training loss(es)": self.sess.run(
-                            self.mse_loss,
-                            feed_dict={
-                                self.sy_train_in: inputs[idxs[:, :max_logging]],
-                                self.sy_train_targ: targets[idxs[:, :max_logging]]
-                            }
-                        )
+                        "Training loss(es)": loss
                     })
+                    self.train_writer.add_summary(summary_out, step + global_step*epochs)
+                    if step == epochs - 1:
+                        self.train_writer.flush()
                 else:
                     epoch_range.set_postfix({
                         "Training loss(es)": self.sess.run(
