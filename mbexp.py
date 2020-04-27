@@ -5,6 +5,8 @@ from __future__ import absolute_import
 import os
 import argparse
 import pprint
+import numpy as np
+import tensorflow as tf
 
 from dotmap import DotMap
 
@@ -17,6 +19,7 @@ def main(env, ctrl_type, ctrl_args, overrides, logdir):
     ctrl_args = DotMap(**{key: val for (key, val) in ctrl_args})
     cfg = create_config(env, ctrl_type, ctrl_args, overrides, logdir)
     cfg.ctrl_cfg.prop_cfg.model_init_cfg.model_dir = os.path.abspath('./log/quad_2d_debug')
+    # cfg.sim_cfg.noise_std = 1e-2
     cfg.pprint()
 
     if ctrl_type == "MPC":

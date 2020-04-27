@@ -148,4 +148,8 @@ class MBExperiment:
                     [sample["ac"] for sample in samples],
                     [sample["rewards"] for sample in samples], global_step=i+1
                 )
-        self.policy.model.train_writer.close()
+
+        try:
+            self.policy.model.train_writer.close()
+        except AttributeError:
+            pass

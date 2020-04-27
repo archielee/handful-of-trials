@@ -36,6 +36,7 @@ class NN:
         """
         self.name = get_required_argument(params, 'name', 'Must provide name.')
         self.model_dir = params.get('model_dir', None)
+        self.train_writer = None
 
         if params.get('sess', None) is None:
             config = tf.ConfigProto()
@@ -202,7 +203,7 @@ class NN:
 
     def train(self, inputs, targets,
               batch_size=32, epochs=100,
-              hide_progress=False, holdout_ratio=0.0, max_logging=5000):
+              hide_progress=False, holdout_ratio=0.0, max_logging=5000, global_step=0):
         def shuffle_rows(arr):
             idxs = np.argsort(np.random.uniform(size=arr.shape), axis=-1)
             return arr[np.arange(arr.shape[0])[:, None], idxs]

@@ -43,18 +43,19 @@ class Quadrotor2DEnv(gym.Env):
     metadata = {'render.modes': ['human']}
     def __init__(self):
         # Quadrotor parameters
-        self.m = 1.    # mass
+        self.m = 0.5   # mass
         self.Iy = 1e-2 # moment of inertia about y (body)
         self.kr = 1e-4 # rotational drag coefficient
         self.kt = 1e-4 # translational drag coefficient
-        self.l = 0.15  # arm length
+        self.l = 0.125 # arm length
 
-        self.dt = 0.01
+        self.dt = 0.1
         self.g = 9.81
 
         # Quadrotor state and reference signals
-        self.state = None
-        self.goal_state = np.array([0., 0., 0., 10., 0., 0.])
+        self.x = None
+        self.x_goal = np.array([0., 0., 5., 10., 0., 0.])
+        self.x_dim = 6
 
         # Conditions to end the episode
         self.height_limit = 10.
@@ -63,33 +64,32 @@ class Quadrotor2DEnv(gym.Env):
         self.steps_beyond_done = None
 
         # Cost function parameters
-        self.Q = np.diag([1e0, 2.5e0, 1e1, 1e1, 2.5e0, 2.5e0])
-        self.R = 0.5 * np.eye(2)
+        self.Q = np.diag([3e0, 1e0, 1e0, 1e0, 1e-1, 2e0])
+        self.R = 5e0 * np.eye(2)
 
         # Rendering
         self.viewer = None
         self.x_range = 10.
 
-        # Actions are motor forces (N) - going for 2.5 T/W ratio
-        act_low_bounds = np.array([-0.5 * self.m * self.g,  # force from front motor (N)
-                                   -0.5 * self.m * self.g]) # force from rear motor (N)
-        act_high_bounds = np.array([0.75 * self.m * self.g,  # force from front motor (N)
-                                    0.75 * self.m * self.g]) # force from rear motor (N)
+        # Actions are deviations from motor forces for hover (i.e. mg/2) (N)
+        act_low_bounds = np.array([-0.96 * self.m * self.g,           # total thrust deviation (N)
+                                   -1.23 * self.m * self.g * self.l]) # moment about pitch (Nm)
+        act_high_bounds = np.array([1.5 * self.m * self.g,            # total thrust deviation (N)
+                                    1.23 * self.m * self.g * self.l]) # moment about pitch (Nm)
         self.action_space = spaces.Box(low=act_low_bounds, high=act_high_bounds)
         # Observations are full 6D state, quadrotor bounded in 20m x 20m box
-        # Cap rates to +/- 10 m/s or +/- 10 rad/s (probably never hit these speeds) 
         obs_low_bounds = np.array([-np.pi, # pitch angle
-                                   -10.,   # pitch rate
+                                   -3.,    # pitch rate
                                    -10.,   # x position (inertial)
                                    0.,     # z position (inertial)
-                                   -10.,   # x velocity (inertial)
-                                   -10.])  # z velocity (inertial)
+                                   -5.,    # x velocity (inertial)
+                                   -5.])   # z velocity (inertial)
         obs_high_bounds = np.array([np.pi - np.finfo(np.float32).eps, # pitch angle
-                                    10.,                              # pitch rate
+                                    3.,                               # pitch rate
                                     10.,                              # x position (inertial)
                                     20.,							  # z position (inertial)
-                                    10.,							  # x velocity (inertial)
-                                    10.])							  # z velocity (inertial)
+                                    5.,  							  # x velocity (inertial)
+                                    5.])							  # z velocity (inertial)
         self.observation_space = spaces.Box(low=obs_low_bounds, high=obs_high_bounds)
 
         self.seed()
@@ -99,33 +99,35 @@ class Quadrotor2DEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
-    def step(self, action):
+    def set_goal(self, goal):
+        assert type(goal) == np.ndarray
+        assert goal.shape == (self.x_dim,)
+        self.x_goal = goal
+
+    def step(self, u):
         # Correction to nominal input (hover)
-        f1 = action[0] + 0.5 * self.m * self.g # force on front motor (N)
-        f2 = action[1] + 0.5 * self.m * self.g # force on rear motor (N)
-        # Map force to thrust/moment
-        T = f1 + f2
-        My = self.l * (f2 - f1)
+        T = u[0] + self.m * self.g # total thrust (N)
+        My = u[1]                  # moment about pitch (Nm)
 
         # 2D quadrotor dynamics model following Freddi, Lanzon, and Longhi, IFAC 2011
-        state = self.state
-        state_dot = np.empty(state.shape)
-        state_dot[0] = state[1]
-        state_dot[1] = -self.kr/self.Iy*state[1] + 1/self.Iy*My
-        state_dot[2] = state[4]
-        state_dot[3] = state[5]
-        state_dot[4] = -self.kt/self.m*state[4] + 1/self.m*np.sin(state[0])*T
-        state_dot[5] = -self.kt/self.m*state[5] + 1/self.m*np.cos(state[0])*T - self.g
+        x_cur = self.x
+        x_dot = np.empty(x_cur.shape)
+        x_dot[0] = x_cur[1]
+        x_dot[1] = -self.kr/self.Iy*x_cur[1] + 1/self.Iy*My
+        x_dot[2] = x_cur[4]
+        x_dot[3] = x_cur[5]
+        x_dot[4] = -self.kt/self.m*x_cur[4] + 1/self.m*np.sin(x_cur[0])*T
+        x_dot[5] = -self.kt/self.m*x_cur[5] + 1/self.m*np.cos(x_cur[0])*T - self.g
 
-        new_state = state + state_dot * self.dt
+        x_next = x_cur + x_dot * self.dt
         # Wrap angle
-        if new_state[0] > np.pi:
-            new_state[0] -= 2*np.pi
-        elif new_state[0] < -np.pi:
-            new_state[0] += 2*np.pi
+        if x_next[0] > np.pi:
+            x_next[0] -= 2*np.pi
+        elif x_next[0] < -np.pi:
+            x_next[0] += 2*np.pi
 
-        self.state = new_state
-        e = self.state - self.goal_state
+        self.x = x_next
+        e = self.x - self.x_goal
         # Correct angle error
         if e[0] > np.pi:
             e[0] -= 2*np.pi
@@ -141,7 +143,7 @@ class Quadrotor2DEnv(gym.Env):
         # done = hit_ground or too_high or too_far or reached_goal
         # if not done:
         #     # Standard quadratic cost function from ILQR
-        #     reward = -0.5 * (e.T @ self.Q @ e + action.T @ self.R @ action)
+        #     reward = -0.5 * (e.T @ self.Q @ e + u.T @ self.R @ u)
         # elif self.steps_beyond_done is None:
         #     self.steps_beyond_done = 0
         #     # Huge cost for crashing
@@ -160,20 +162,21 @@ class Quadrotor2DEnv(gym.Env):
         #     reward = 0.0
 
         done = False
-        reward = -0.5 * (e.T @ self.Q @ e + action.T @ self.R @ action)
+        reward = -0.5 * (e.T @ self.Q @ e + u.T @ self.R @ u)
         # if self.state[3] <= 0.:
         #     reward += -1e4
 
-        return self.state, reward, done, {}
+        return self.x, reward, done, {}
 
     def reset(self):
         print("Environment reset")
-        # self.state = self.np_random.uniform(low=-0.5, high=0.5, size=self.observation_space.shape)
-        self.state = np.zeros(6)
-        self.state[0] = self.np_random.uniform(low=-5*np.pi/180., high=5*np.pi/180.) # spawn at some random small pitch angle
-        self.state[2] = self.np_random.uniform(low=-2., high=2.)                       # spawn at some x location
-        self.state[3] = self.np_random.uniform(low=9., high=11.)                       # spawn at some height in the middle
-        return self.state
+        # self.x = self.np_random.uniform(low=-0.5, high=0.5, size=self.observation_space.shape)
+        self.x = np.zeros(6)
+        # self.x[0] = self.np_random.uniform(low=-5*np.pi/180., high=5*np.pi/180.) # spawn at some random small pitch angle
+        # self.x[2] = self.np_random.uniform(low=-2., high=2.)                     # spawn at some x location
+        # self.x[3] = self.np_random.uniform(low=8., high=12.)                     # spawn at some height in the middle
+        self.x[3]= 10
+        return self.x
 
     def render(self, mode='human', close=False):
         screen_width = 800
@@ -192,6 +195,12 @@ class Quadrotor2DEnv(gym.Env):
             ref.add_attr(self.reftrans)
             ref.set_color(1,0,0)
             self.viewer.add_geom(ref)
+            # Draw start
+            start = rendering.make_circle(ref_size)
+            self.starttrans = rendering.Transform()
+            start.add_attr(self.starttrans)
+            start.set_color(0,0,0)
+            self.viewer.add_geom(start)
             # Draw drone
             dir_path = os.path.dirname(os.path.realpath(__file__))
             quad = rendering.Image('%s/assets/quadrotor2d.png' % dir_path, 60, 12)
@@ -201,18 +210,23 @@ class Quadrotor2DEnv(gym.Env):
             # image_data = quad.img.get_data()[:]
             # print(image_data)
 
-        if self.state is None:
+        if self.x is None:
             return None
 
-        quad_x = self.state[2]*scale+screen_width/2.0 
-        quad_y = self.state[3]*scale 
+        quad_x = self.x[2]*scale+screen_width/2.0 
+        quad_y = self.x[3]*scale 
         self.quadtrans.set_translation(quad_x, quad_y)
-        self.quadtrans.set_rotation(self.state[0])
+        self.quadtrans.set_rotation(-self.x[0])
 
-        y = self.goal_state[2:4]
+        y = self.x_goal[2:4]
         ref_x = y[0]*scale+screen_width/2.0
         ref_y = y[1]*scale
         self.reftrans.set_translation(ref_x, ref_y)
+
+        y = np.array([0, 10])
+        start_x = y[0]*scale+screen_width/2.0
+        start_y = y[1]*scale
+        self.starttrans.set_translation(start_x, start_y)
 
         return self.viewer.render(return_rgb_array=(mode =='rgb_array'))
     

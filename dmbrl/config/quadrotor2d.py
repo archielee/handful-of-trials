@@ -14,11 +14,11 @@ import dmbrl.env
 
 class Quadrotor2DConfigModule:
     ENV_NAME = "MBRLQuadrotor2D-v0"
-    TASK_HORIZON = 1000
+    TASK_HORIZON = 50
     NTRAIN_ITERS = 75
     NROLLOUTS_PER_ITER = 1
-    PLAN_HOR = 30
-    MODEL_IN, MODEL_OUT = 8, 6
+    PLAN_HOR = 20
+    MODEL_IN, MODEL_OUT = 9, 6
     GP_NINDUCING_POINTS = 200
 
     def __init__(self):
@@ -41,44 +41,50 @@ class Quadrotor2DConfigModule:
 
     # @staticmethod
     # def obs_preproc(obs):
+    #     angs = obs[:,0]
     #     if isinstance(obs, np.ndarray):
-    #         return np.concatenate([obs[:, 1:2], np.sin(obs[:, 2:3]), np.cos(obs[:, 2:3]), obs[:, 3:]], axis=1)
+    #         obs_proc = np.concatenate([np.expand_dims(np.sin(angs), axis=-1), np.expand_dims(np.cos(angs), axis=-1), obs[:,1:]], axis=-1)
     #     else:
-    #         return tf.concat([obs[:, 1:2], tf.sin(obs[:, 2:3]), tf.cos(obs[:, 2:3]), obs[:, 3:]], axis=1)
+    #         obs_proc = tf.concat([tf.expand_dims(tf.sin(angs), axis=-1), tf.expand_dims(tf.cos(angs), axis=-1), obs[:,1:]], axis=-1)
+    #     return obs_proc
 
     # @staticmethod
-    # def obs_postproc(obs, pred):
+    # def obs_postproc(obs, model_out):
+    #     dt = 0.1
+    #     pitch = obs[:,0] + model_out[:,0] * dt
+    #     x = obs[:,2] + model_out[:,1] * dt
+    #     z = obs[:,3] + model_out[:,2] * dt
+    #     q = model_out[:,0]
+    #     dx = model_out[:,1]
+    #     dz = model_out[:,2]
     #     if isinstance(obs, np.ndarray):
-    #         return np.concatenate([pred[:, :1], obs[:, 1:] + pred[:, 1:]], axis=1)
+    #         new_obs = np.stack([pitch, q, x, z, dx, dz], axis=-1)
     #     else:
-    #         return tf.concat([pred[:, :1], obs[:, 1:] + pred[:, 1:]], axis=1)
+    #         new_obs = tf.stack([pitch, q, x, z, dx, dz], axis=-1)
+    #     return new_obs
 
-    # @staticmethod
-    # def targ_proc(obs, next_obs):
-    #     return np.concatenate([next_obs[:, :1], next_obs[:, 1:] - obs[:, 1:]], axis=1)
+    @staticmethod
+    def targ_proc(obs, next_obs):
+        rate_idxs = [1,4,5]
+        return next_obs[:,rate_idxs]
 
     @staticmethod
     def obs_cost_fn(obs):
-        Q = np.diag([1e0, 2.5e0, 5e0, 5e0, 2.5e0, 2.5e0]).astype(np.float32)
-        goal = np.array([0., 0., 0., 10., 0., 0.], dtype=np.float32)
+        Q = np.diag([3e0, 1e0, 1e0, 1e0, 1e-1, 2e0]).astype(np.float32)
+        goal = np.array([0., 0., 5., 10., 0., 0.], dtype=np.float32)
         if isinstance(obs, np.ndarray):
-            hit_ground_mask = obs[:,3] <= 0.
             e = obs - goal
             cost = 0.5 * np.einsum('ij,ij->i', np.einsum('ij,jk->ik', e, Q), e)
-            # cost[hit_ground_mask] += 1e4
         else:
             Q = tf.constant(Q, dtype=tf.float32)
             goal = tf.constant(goal, dtype=tf.float32)
             e = obs - goal
-            mask = tf.less_equal(obs[:,3], 0)
             cost = tf.cast(0.5 * tf.einsum('ij,ij->i', tf.einsum('ij,jk->ik', e, Q), e), tf.float32)
-            # penalty = 1e4 * tf.ones(cost.shape, dtype=tf.float32) + cost
-            # cost = tf.where(mask, penalty, cost)
         return cost
 
     @staticmethod
     def ac_cost_fn(acs):
-        R = 0.5 * np.eye(2)
+        R = 5e0 * np.eye(2)
         if isinstance(acs, np.ndarray):
             return 0.5 * np.einsum('ij,ij->i', np.einsum('ij,jk->ik', acs, R), acs)
         else:

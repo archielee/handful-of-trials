@@ -234,7 +234,8 @@ class MPC(Controller):
                 self.pred_particles.append(pred_traj)
             else:
                 self.pred_means.append(np.mean(pred_traj, axis=1))
-                self.pred_vars.append(np.mean(np.square(pred_traj - self.pred_means[-1]), axis=1))
+                # self.pred_vars.append(np.mean(np.square(pred_traj - self.pred_means[-1]), axis=1))
+                self.pred_vars.append(np.mean(np.square(np.swapaxes(pred_traj, 0, 1) - self.pred_means[-1]), axis=1))
             if get_pred_cost:
                 return self.act(obs, t), pred_cost
         return self.act(obs, t)

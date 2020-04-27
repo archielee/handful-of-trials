@@ -24,6 +24,7 @@ def main(env, ctrl_type, ctrl_args, overrides, model_dir, logdir):
     overrides.append(["exp_cfg.log_cfg.nrecord", "1"])
 
     cfg = create_config(env, ctrl_type, ctrl_args, overrides, logdir)
+    # cfg.sim_cfg.noise_std = 1e-2
     cfg.pprint()
 
     if ctrl_type == "MPC":
